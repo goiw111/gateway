@@ -6,6 +6,8 @@ use actix_web::{http, Error, HttpResponse};
 use futures::future::{ok, Either, Ready};
 
 use log::info;
+use actix_http::Response;
+
 
 // There are two steps in middleware processing.
 // 1. Middleware initialization, middleware factory gets called with
@@ -56,26 +58,31 @@ where
     fn call(&mut self, req: ServiceRequest) -> Self::Future {
 
 
-        info!("{:#?}", req.app_config().secure() );
+        info!("{:#?}", req.head());
 
         if req.app_config().secure() {
             Either::Left(self.service.call(req))
         } else {
-
-            let location = format!("https://{}{}",
-                req. connection_info().host(),
-                req.uri().path_and_query().unwrap());
-
-            #[allow(non_snake_case)]
-            let STRICT_TRANSPORT_SECURITY: &'static str = "strict-transport-security";
-
-            Either::Right(ok(req.into_response(
-                        HttpResponse::Found()
-                        .header(http::header::LOCATION, location)
-                        .header(STRICT_TRANSPORT_SECURITY, "max-age=31536000")
-                        .finish()
-                        .into_body(),
-                        )))
+            let res = http_redir(&req);
+            Either::Right(ok(req.into_response(res.into_body())))
         }
     }
+}
+
+fn http_redir(req: &ServiceRequest) -> Response {
+   
+    let location = format!("https://localhost.local:8443{}",
+        req.uri()
+        .path_and_query()
+        .unwrap());
+
+    #[allow(non_snake_case)]
+    let STRICT_TRANSPORT_SECURITY: &'static str = 
+        "strict-transport-security";
+
+
+    HttpResponse::Found()
+        .header(http::header::LOCATION, location)
+        .header(STRICT_TRANSPORT_SECURITY, "max-age=31536000")
+        .finish()
 }

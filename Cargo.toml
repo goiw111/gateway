@@ -12,7 +12,14 @@ env_logger = "0.8.2"
 actix-web = { version = "3", features = ["openssl"] }
 openssl = "0.10"
 futures = "0.3"
+actix-http = "2.2.0"
 actix-service = "1"
+sailfish = "0.3.1"
+sailfish-macros = "0.3.1"
+dotenv = "0.15.0"
+config = "0.10.1"
+tracing = "0.1"
+serde = "1.0"
 
 [features]
 join = []
