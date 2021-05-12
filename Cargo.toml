@@ -19,7 +19,20 @@ sailfish-macros = "0.3.1"
 dotenv = "0.15.0"
 config = "0.10.1"
 tracing = "0.1"
-serde = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+futures-util = { version = "0.3.4", default-features = false }
+serde_json = "1.0"
+time = { version = "0.2.7", default-features = false, features = ["std"] }
+uuid = { version = "0.8", features = ["v4"] }
+cookie = { version = "0.14", default-features = false, features = ["signed", "key-expansion"] }
+lazy_static = "1.4.0"
+rand = "0.8"
+bcrypt = "0.9"
+
+[dependencies.mongodb]
+version = "1.2"
+default-features = false
+features = ["tokio-runtime"]
 
 [features]
 join = []

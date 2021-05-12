@@ -1,0 +1,4 @@
+<head>
+    <title>Sign in to <%= appname %> · <%= appname %></title>
+    <meta name="description" content="<%= description %>">
+</head>

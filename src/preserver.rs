@@ -5,19 +5,11 @@ use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::{http, Error, HttpResponse};
 use futures::future::{ok, Either, Ready};
 
-use log::info;
 use actix_http::Response;
 
 
-// There are two steps in middleware processing.
-// 1. Middleware initialization, middleware factory gets called with
-//    next service in chain as parameter.
-// 2. Middleware's call method gets called with normal request.
 pub struct Preserver;
 
-// Middleware factory is `Transform` trait from actix-service crate
-// `S` - type of the next service
-// `B` - type of response's body
 impl<S, B> Transform<S> for Preserver
 where
     S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
@@ -57,11 +49,17 @@ where
 
     fn call(&mut self, req: ServiceRequest) -> Self::Future {
 
-
-        info!("{:#?}", req.head());
-
         if req.app_config().secure() {
-            Either::Left(self.service.call(req))
+            if let Some(_) = req.headers().get("SID") {
+                if let Some("login") | Some("seission") = req.match_name() {
+                    let res = seission_redir();
+                    Either::Right(ok(req.into_response(res.into_body())))
+                } else {
+                    Either::Left(self.service.call(req))
+                }
+            } else {
+                Either::Left(self.service.call(req))
+            }
         } else {
             let res = http_redir(&req);
             Either::Right(ok(req.into_response(res.into_body())))
@@ -84,5 +82,11 @@ fn http_redir(req: &ServiceRequest) -> Response {
     HttpResponse::Found()
         .header(http::header::LOCATION, location)
         .header(STRICT_TRANSPORT_SECURITY, "max-age=31536000")
+        .finish()
+}
+
+fn seission_redir() -> Response {
+    HttpResponse::Found()
+        .header(http::header::LOCATION, "/")
         .finish()
 }

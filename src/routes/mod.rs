@@ -6,6 +6,14 @@ mod oauth;
 mod join;
 mod seission;
 
+use crate::Authako;
+use actix_web::{get, Responder, HttpResponse};
+
+#[get("/", wrap = "Authako")]
+async fn index() -> impl Responder {
+    HttpResponse::Ok()
+ }
+
 pub fn config(cfg: &mut web::ServiceConfig) {
 
     cfg.service(seission::login)
@@ -19,5 +27,6 @@ pub fn config(cfg: &mut web::ServiceConfig) {
     #[cfg(feature = "join")]
     cfg.service(join::signup)
         .service(join::join);
-            
+
+    cfg.service(index);
 }
