@@ -82,13 +82,20 @@ impl Loged {
     }
 
     pub fn login(
-        &mut self,
-        key: &Key,
-        session: ObjectId) {
-        let s = format!("{}::",session.to_hex());
+        &mut        self,
+        key:        &Key,
+        session:    ObjectId,
+        user_id:    String) {
+        let s = format!("{}::{}",session.to_hex(),user_id);
         let mut jar = self.0.borrow_mut();
         jar.signed(key).add(Cookie::new("GSID",s));
     }
+
+    pub fn logout(&mut  self, key:  &Key) {
+        let mut jar = self.0.borrow_mut();
+        jar.signed(key).remove(Cookie::named("GSID"));
+    }
+
 }
 
 impl FromRequest for Loged {
@@ -177,11 +184,13 @@ where
                 .get::<Rc<RefCell<LogedInner>>>() {
                     let jar = s.borrow_mut();
                     for cookie in jar.delta() {
+                        println!("{}",cookie.encoded().to_string());
                         let mut cookie = cookie.clone();
                         if cookie.name() == "GSID" {
                         cookie.set_name(inner.name());
                         cookie.set_http_only(true);
                         cookie.set_secure(true);
+                        println!("{}",cookie.encoded().to_string());
                         let val = HeaderValue::from_str(&cookie
                             .encoded()
                             .to_string());

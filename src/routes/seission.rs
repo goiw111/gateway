@@ -10,7 +10,7 @@ use sailfish::TemplateOnce;
 use std::sync::Mutex;
 use actix_web::HttpRequest;
 use actix_web::HttpMessage;
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::{doc};
 use serde::{Serialize, Deserialize};
 use bcrypt::verify;
 
@@ -77,6 +77,11 @@ struct User {
     user_pass:  String
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct Seiss {
+    user_id:    String,
+}
+
 #[post("/seission", wrap = "Loger")]
 async fn seission(
     form:   web::Form<Credentials>,
@@ -99,11 +104,22 @@ async fn seission(
                                 ,d.user_pass.as_str());
                             if let Ok(b) = ver {
                                 if b == true {
-                                    loged.login(&data.key,
-                                        ObjectId::new());
-                                    return HttpResponse::Found()
-                                        .header(http::header::LOCATION,"/")
-                                        .finish();
+                                    if let Ok(id) = db
+                                    .collection_with_type::<Seiss>("seission")
+                                        .insert_one(Seiss {
+                                            user_id: form.login.clone()
+                                        },None).await {
+                                    if let Some(obj_id) = id
+                                        .inserted_id
+                                            .as_object_id() {
+                                        loged.login(&data.key,
+                                            obj_id.clone(),
+                                            form.login.clone());
+                                        return HttpResponse::Found()
+                                            .header(http::header::LOCATION,"/")
+                                            .finish();
+                                    }
+                                }
                                 }
                             }
                         }
@@ -121,4 +137,19 @@ async fn seission(
     }
     HttpResponse::InternalServerError()
         .finish()
+}
+
+#[get("/logout", wrap = "Loger")]
+async fn logout(
+    mut loged:  Loged,
+    data:       Data<Mutex<AppData>>)
+    -> impl Responder {
+        if let Ok(data) = data.lock() {
+        loged.logout(&data.key);
+        return HttpResponse::Found()
+            .header(http::header::LOCATION,"/")
+            .finish()
+        }
+        HttpResponse::InternalServerError()
+            .finish()
 }

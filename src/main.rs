@@ -11,13 +11,13 @@ mod preserver;
 mod config;
 mod authako;
 mod loger;
+mod register;
 
-struct AppData {
+pub struct AppData {
     key:            Key,
     appname:        String,
     description:    String,
     mongodb_db:     Database,
-    sessid:         String
 }
 
 #[actix_web::main]
@@ -43,7 +43,6 @@ async fn main() -> std::io::Result<()> {
         appname:        config.appname.clone(),
         description:    config.description.clone(),
         mongodb_db:     db.clone(),
-        sessid:         config.sessid.clone(),
     }));
 
     HttpServer::new(
