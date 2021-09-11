@@ -1,0 +1,6 @@
+.git/
+localhost.local-key.pem
+localhost.local.pem
+.env
+Cargo.lock
+target/

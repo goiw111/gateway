@@ -1,60 +1,180 @@
 use uuid::Uuid;
-use serde::Deserialize;
 
-use futures_util::future::{ok, FutureExt, LocalBoxFuture, Ready};
+use futures::future::{ok, FutureExt, LocalBoxFuture, Ready};
 
 use std::task::{Context, Poll};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::env;
+use std::collections::BTreeMap;
+use actix_web::dev::Extensions;
+
+use core::str::FromStr;
 
 use cookie::{Key, CookieJar};
 
-use actix_service::{Service, Transform};
-use actix_web::{dev::ServiceRequest, dev::ServiceResponse, Error, HttpMessage};
+use actix_service::{
+    Service,
+    Transform};
+use actix_web::{
+    dev::ServiceRequest,
+    dev::ServiceResponse,
+    Error,
+    HttpMessage};
+use actix_web::FromRequest;
+use actix_web::HttpRequest;
+use actix_web::dev::Payload;
+use rmp_serde::{Deserializer, Serializer};
+use serde::{Deserialize, Serialize};
+use bitflags::bitflags;
 
 pub struct AuthakoInner {
     key:        Key,
     name:       String,
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
-enum Resource {
-    Permission(u8),
-    Resources(Vec<Resources>),
-}
-
-#[derive(Deserialize, Debug, PartialEq)]
-struct Resources {
-    name:   String,
-    role:   Resource
-}
-
-impl Resources {
-    /*pub fn has_right() -> bool {
-    }*/
-
-    fn from(res: &str) -> Self {
-        serde_json::from_str(res)
-            .unwrap_or(Default::default())
+bitflags!{
+    #[derive(Default)]
+    struct Per: u8 {
+        const   C = 0b0001 | Self::R.bits;
+        const   R = 0b0010;
+        const   U = 0b0100 | Self::R.bits;
+        const   D = 0b1000 | Self::R.bits;
     }
 }
 
-impl Default for Resources {
-    fn default() -> Self {
-        Resources {
-            name:   String::from("None"),
-            role:   Resource::Permission(0),
+impl Serialize for Per {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        let mut vec = HashSet::new();
+        for (x, v) in [(0b0001, "c"), (0b0010, "r"), (0b0100, "u"), (0b1000, "d")]
+            .into_iter() {
+            if x | self.bits == x {
+                vec.insert(v);
+            }
+            if (vec.contains(&"u") || vec.contains(&"c") || vec.contains(&"d")) 
+                && vec.contains(&"r") {
+                let _ = vec.remove(&"r");
+            }
+            let mut seq = serializer.serialize_seq(Some(vec.len()))?;
+            for element in vec {
+                seq.serialize_element(element)?;
+            }
         }
+        seq.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Per {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+    {
+        let vec = HashSet::deserialize(d)?;
+        let mut p = Per::empty();
+        for element in vec {
+            match element {
+                "c" => p.bits |= 0b0001,
+                "r" => p.bits |= 0b0010,
+                "u" => p.bits |= 0b0100,
+                "d" => p.bits |= 0b1000,
+            }
+        }
+        Ok(p)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum Resource {
+    P(Per),
+    R(BTreeMap<String, Resource>),
+}
+
+impl PartialEq for Resource {
+    fn eq(&self, other: &Resource) -> bool {
+        match self {
+            Resource::P(p1) => {
+                if let Resource::P(p2) = other {
+                    if p1 == p2 {
+                        return  true;
+                    } else if *p1 == true {
+                        return  true;
+                    }
+                }
+            },
+            Resource::R(m1) => {
+                if let Resource::R(m2) = other {
+                    let mut res = true;
+                    for (l,r1) in m1.iter() {
+                        if let Some(r2) = m2.get(l) {
+                            res &= r1.eq(r2);
+                        }
+                    }
+                    return  res;
+                }
+            },
+        }
+        return  false;
+    }
+}
+
+impl Resource {
+    pub fn from_read<R, T>(rd: R) -> Self
+    where R: Read {
+        if let Ok(r) = rmp_serde::decode::from_read(s) {
+            return  r;
+        }
+        Resource::default()
+    }
+    pub fn comfortable_with(&self, other: &Resource) -> bool {
+        self.eq(other)
+    }
+}
+
+impl Default for Resource {
+    fn default() -> Self {
+        let mut res = BTreeMap::new();
+        res.insert(String::from("gateway"),Resource::Permission(false));
+        Resource::Resources(res)
     }
 }
 
 #[derive(Default, PartialEq, Debug)]
 pub struct Roler {
-    suid:   Option<(Uuid,Uuid)>,
-    roles:  Resources,
+    suid:       Option<(Uuid,Uuid)>,
+    roles:      Resource,
 }
+
+pub struct Session (Rc<RefCell<Roler>>);
+
+impl Session {
+    fn get_session(extensions: &mut Extensions) -> Session {
+        if let Some(s) = extensions.get::<Rc<RefCell<Roler>>>() {
+            return Session(Rc::clone(s));
+        }
+        let inner = Rc::new(RefCell::new(Roler::default()));
+        extensions.insert(Rc::clone(&inner));
+        Session(inner)
+    }
+    pub fn get_resource(&self) -> Resource {
+        self.0.borrow().roles.clone()
+    }
+}
+
+impl FromRequest for Session {
+    type Error = Error;
+    type Future = Ready<Result<Self, Self::Error>>;
+    type Config = ();
+
+    #[inline]
+    fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
+        ok(Session::get_session(&mut *req.extensions_mut()))
+    }
+}
+
 
 impl Roler {
     fn set_ruler(self, req: &mut ServiceRequest) {
@@ -86,7 +206,7 @@ impl AuthakoInner {
                         return Roler {
                             suid:    Some((Uuid::parse_str(value[0]).unwrap()
                                          ,Uuid::parse_str(value[1]).unwrap())),
-                            roles:  Resources::from(value[2]),
+                            roles:  Resource::from(value[2]),
                         }
                     }
                 }
@@ -158,10 +278,7 @@ mod test {
 
     #[test]
     fn test() {
-        assert_eq!(Resources {
-                name:   String::from("None"),
-                role:   Resource::Permission(0),
-        },Default::default());
+        assert_eq!(Resource::default(), Default::default());
 
         assert_eq!(Roler {
             suid:   None,

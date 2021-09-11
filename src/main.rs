@@ -12,6 +12,7 @@ mod config;
 mod authako;
 mod loger;
 mod register;
+mod error;
 
 pub struct AppData {
     key:            Key,
@@ -24,8 +25,9 @@ pub struct AppData {
 async fn main() -> std::io::Result<()> {
     use actix_web::{App, HttpServer};
 
-    env_logger::init_from_env(Env::default()
-        .default_filter_or("info"));
+    let env = Env::default().filter_or("RUST_LOG","info")
+        .write_style_or("RUST_LOG_STYLE","auto");
+    env_logger::init_from_env(env);
 
     let config  =   config::Config::init()
         .expect("Server configuration");
@@ -47,8 +49,10 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(
         move || {
+            use awc::Client;
             App::new()
-            .app_data(data.clone())
+            .data(data.clone())
+            .data(Client::default())
             .wrap(Logger::default())
             .wrap(preserver::Preserver)
             .configure(routes::config)

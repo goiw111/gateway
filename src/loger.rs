@@ -16,7 +16,7 @@ use cookie::{Key, CookieJar};
 use mongodb::bson::oid::ObjectId;
 
 use std::rc::Rc;
-use futures_util::future::{ok, FutureExt, Ready, LocalBoxFuture};
+use futures::future::{ok, FutureExt, Ready, LocalBoxFuture};
 
 pub type LogedInner = CookieJar;
 #[derive(Debug)]

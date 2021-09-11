@@ -1,0 +1,28 @@
+<html>
+    <% include!("head.stpl"); %>
+  <body>
+      <div>
+          <main class="application-main">
+              <div class="auth-form">
+                  <div class="auth-form-header">
+                      <h1>Sign in to <%= appname %></h1>
+                  </div>
+                  <div class="auth-form-body">
+                      <form action="/join" accept-charset="UTF-8" method="post">
+                          <input type="hidden" name="authenticity_token" value="<%= authenticity_token %>">
+                          <label for="user_field"> username </label>
+                          <input type="text" name="username" id="user_field" autocapitalize="off" autocorrect="off" autocomplete="username" autofocus="autofocus">
+                          <label for="email_field"> Email address </label>
+                          <input type="text" name="email" id="email_field" autocapitalize="off" autocorrect="off" autocomplete="email" autofocus="autofocus">
+                          <div class="position-relative">
+                              <label for="password"> Password </label>
+                              <input type="password" name="password" id="password" autocomplete="current-password">
+                              <input type="submit" name="commit" value="create account" data-disable-with="Signing up…">
+                          </div>
+                      </form>
+                  </div>
+              </div>
+          </main>
+      </div>
+  </body>
+</html>
