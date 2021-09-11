@@ -4,3 +4,4 @@ localhost.local.pem
 .env
 Cargo.lock
 target/
+.gitignore
