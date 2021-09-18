@@ -1,19 +1,17 @@
 use actix_web::{web, middleware::Logger};
 use env_logger::Env;
-use crate::authako::Authako;
+use crate::{authako::Authako, register::APIRegister};
 use cookie::Key;
 use std::sync::Mutex;
 use mongodb::{Client, options::ClientOptions, Database};
 
 mod routes;
-mod http_404;
 mod preserver;
 mod config;
 mod authako;
 mod loger;
 mod register;
-mod error;
-
+mod util;
 pub struct AppData {
     key:            Key,
     appname:        String,
@@ -51,12 +49,11 @@ async fn main() -> std::io::Result<()> {
         move || {
             use awc::Client;
             App::new()
-            .data(data.clone())
+            .app_data(data.clone())
             .data(Client::default())
             .wrap(Logger::default())
             .wrap(preserver::Preserver)
             .configure(routes::config)
-            .default_service(web::to(http_404::notfound))
         })
         .bind(format!("{}:{}",config.host,config.port))?
         .bind_openssl(format!("{}:{}",config.host,config.sport),acceptor)?

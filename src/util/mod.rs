@@ -1,2 +1,3 @@
-mod lgvalue;
 mod lgerror;
+
+pub use self::lgerror::*;

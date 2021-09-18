@@ -1,7 +1,5 @@
 use uuid::Uuid;
-
 use futures::future::{ok, FutureExt, LocalBoxFuture, Ready};
-
 use std::task::{Context, Poll};
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -9,8 +7,6 @@ use std::sync::Arc;
 use std::env;
 use std::collections::BTreeMap;
 use actix_web::dev::Extensions;
-
-use core::str::FromStr;
 
 use cookie::{Key, CookieJar};
 
@@ -25,8 +21,7 @@ use actix_web::{
 use actix_web::FromRequest;
 use actix_web::HttpRequest;
 use actix_web::dev::Payload;
-use rmp_serde::{Deserializer, Serializer};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, ser::SerializeSeq};
 use bitflags::bitflags;
 
 pub struct AuthakoInner {
@@ -36,7 +31,7 @@ pub struct AuthakoInner {
 
 bitflags!{
     #[derive(Default)]
-    struct Per: u8 {
+    pub struct Per: u8 {
         const   C = 0b0001 | Self::R.bits;
         const   R = 0b0010;
         const   U = 0b0100 | Self::R.bits;
@@ -47,22 +42,23 @@ bitflags!{
 impl Serialize for Per {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
-            S: Serializer,
+            S: serde::Serializer,
     {
+        use std::collections::HashSet;
         let mut vec = HashSet::new();
         for (x, v) in [(0b0001, "c"), (0b0010, "r"), (0b0100, "u"), (0b1000, "d")]
-            .into_iter() {
-            if x | self.bits == x {
-                vec.insert(v);
+            .iter() {
+            if x & self.bits == *x {
+                vec.insert(*v);
             }
             if (vec.contains(&"u") || vec.contains(&"c") || vec.contains(&"d")) 
                 && vec.contains(&"r") {
                 let _ = vec.remove(&"r");
             }
-            let mut seq = serializer.serialize_seq(Some(vec.len()))?;
-            for element in vec {
-                seq.serialize_element(element)?;
-            }
+        }
+        let mut seq = serializer.serialize_seq(Some(vec.len()))?;
+        for element in vec {
+            seq.serialize_element(element)?;
         }
         seq.end()
     }
@@ -71,9 +67,9 @@ impl Serialize for Per {
 impl<'de> Deserialize<'de> for Per {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
-            D: Deserializer<'de>,
+            D: serde::Deserializer<'de>,
     {
-        let vec = HashSet::deserialize(d)?;
+        let vec = std::vec::Vec::deserialize(deserializer)?;
         let mut p = Per::empty();
         for element in vec {
             match element {
@@ -81,6 +77,7 @@ impl<'de> Deserialize<'de> for Per {
                 "r" => p.bits |= 0b0010,
                 "u" => p.bits |= 0b0100,
                 "d" => p.bits |= 0b1000,
+                _   => (),
             }
         }
         Ok(p)
@@ -98,9 +95,7 @@ impl PartialEq for Resource {
         match self {
             Resource::P(p1) => {
                 if let Resource::P(p2) = other {
-                    if p1 == p2 {
-                        return  true;
-                    } else if *p1 == true {
+                    if p2.bits & p1.bits == p2.bits {
                         return  true;
                     }
                 }
@@ -108,9 +103,11 @@ impl PartialEq for Resource {
             Resource::R(m1) => {
                 if let Resource::R(m2) = other {
                     let mut res = true;
-                    for (l,r1) in m1.iter() {
-                        if let Some(r2) = m2.get(l) {
+                    for (l,r1) in m2.iter() {
+                        if let Some(r2) = m1.get(l) {
                             res &= r1.eq(r2);
+                        } else {
+                            return false;
                         }
                     }
                     return  res;
@@ -122,9 +119,9 @@ impl PartialEq for Resource {
 }
 
 impl Resource {
-    pub fn from_read<R, T>(rd: R) -> Self
-    where R: Read {
-        if let Ok(r) = rmp_serde::decode::from_read(s) {
+    pub fn from(s: &str) -> Self {
+        //TODO make it Result<self, LGError>
+        if let Ok(r) = serde_json::from_str(s) {
             return  r;
         }
         Resource::default()
@@ -137,8 +134,8 @@ impl Resource {
 impl Default for Resource {
     fn default() -> Self {
         let mut res = BTreeMap::new();
-        res.insert(String::from("gateway"),Resource::Permission(false));
-        Resource::Resources(res)
+        res.insert(String::from("gateway"), Resource::P(Per::R));
+        Resource::R(res)
     }
 }
 

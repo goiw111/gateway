@@ -49,7 +49,7 @@ impl Loged {
     pub fn get(&self, key: &Key) -> Option<ObjectId> {
         let mut jar = self.0.borrow_mut();
         if let Some(c) = jar.signed(key).get("GSID") {
-            if let Some(id) = c.value().split("::").nth(0) {
+            if let Some(id) = c.value().split("::").next() {
                 return ObjectId::with_string(id).ok();
             }
         }
@@ -66,7 +66,7 @@ impl Loged {
     }
 
     fn set_session(extensions: &mut Extensions, loged: Loged) {
-        if let None = extensions.get::<Rc<RefCell<LogedInner>>>() {
+        if extensions.get::<Rc<RefCell<LogedInner>>>().is_none() {
             extensions.insert(Rc::clone(&loged.0));
         }
     }
@@ -126,7 +126,7 @@ where
 
     fn new_transform(&self, service: S) -> Self::Future {
         ok(LogerMiddleware { 
-            service:    service,
+            service,
             inner:      Rc::new(LogerInner::new())
         })
     }

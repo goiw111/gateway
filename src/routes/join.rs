@@ -16,7 +16,7 @@ use std::sync::Mutex;
 use actix_web::http;
 use rand::{thread_rng, Rng};
 use serde::{Serialize, Deserialize};
-use mongodb::bson::{doc};
+use mongodb::bson::doc;
 use bcrypt::hash;
 use validator::{Validate, ValidationError};
 
@@ -32,7 +32,7 @@ struct JoinTemplate {
 pub async fn signup(loged: Loged, data: Data<Mutex<AppData>>) -> impl Responder {
 
     if let Ok(data) = data.lock() {
-    if let Some(_) = loged.get(&data.key) {
+    if loged.get(&data.key).is_some() {
             return HttpResponse::Found()
                 .header(http::header::LOCATION, "/")
                 .finish();
@@ -45,8 +45,8 @@ pub async fn signup(loged: Loged, data: Data<Mutex<AppData>>) -> impl Responder 
         .map(char::from)
         .collect();
     let ctx = JoinTemplate {
-        appname:                appname.clone(),
-        description:            description.clone(),
+        appname,
+        description,
         authenticity_token:     rand_string.clone(),
     };
 
@@ -56,8 +56,7 @@ pub async fn signup(loged: Loged, data: Data<Mutex<AppData>>) -> impl Responder 
 
         return HttpResponse::Ok()
             .cookie(
-                http::Cookie::build("authenticity_token", 
-                    rand_string.clone())
+                http::Cookie::build("authenticity_token", rand_string)
                 .secure(true)
                 .http_only(true)
                 .finish()
@@ -110,7 +109,7 @@ pub async fn join(
     form:       web::Form<CredentialsJoin>) -> impl Responder {
     let mut vec = Vec::new();
     if let Ok(data) = data.lock() {
-        if let None = loged.get(&data.key) {
+        if loged.get(&data.key).is_none() {
             if let Some(c) = req.cookie("authenticity_token") {
                 if c.value() == form.authenticity_token {
                     match form.validate() {
@@ -160,19 +159,18 @@ pub async fn join(
                                 }, None)
                             .await;
                             if let Ok(r) = res {
-                                if let Some(_) = r {
+                                if r.is_some() {
                                     //msg: unavalibel usernamen
                                     vec.push(7);
                                 } else {
                                     let hash = hash(form.password.clone(),12);
                                     if let Ok(h) = hash {
-                                        if let Ok(_) = db
-                                            .collection_with_type::<User>("users")
+                                        if db.collection_with_type::<User>("users")
                                             .insert_one(User {
                                                 user_name:  form.username.clone(),
                                                 user_pass:  h,
                                                 emails:     vec![form.email.clone()],
-                                            },None).await {
+                                            },None).await.is_ok() {
                                                 if let Ok(id) = db
                                                     .collection_with_type::<Seiss>("seission")
                                                         .insert_one(Seiss {

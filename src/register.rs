@@ -12,25 +12,20 @@ use std::fs::OpenOptions;
 use actix_http::Error;
 use actix_service::{Service, Transform};
 use std::task::{Context, Poll};
-use futures::future::{ok,err, FutureExt, LocalBoxFuture, Ready};
+use futures::future::{ok ,err ,FutureExt , Ready};
 use toml::de;
 use core::cell::Cell;
 use std::io::Read;
 use std::os::linux::fs::MetadataExt;
 use crate::authako::Resource;
-use actix_web::http::StatusCode;
-use crate::error::GatewayError;
-use actix_web::http::header::Accept;
+use crate::util::LGEInfo;
+use crate::util::LGError;
 use actix_web::dev::ResourceDef;
 use std::collections::HashSet;
-use actix_web::http::Method;
-use actix_web::http::header::Header;
-use crate::error::IntoGatewayError;
+use actix_web::http::{Method, StatusCode};
 use std::str::FromStr;
-use std::fmt;
 use crate::authako::Session;
-use actix_web::ResponseError;
-use serde::{Serialize, Deserialize};
+use serde::Deserialize;
 
 type RegisterInner = BTreeMap<String, Res>;
 
@@ -38,31 +33,29 @@ pub struct Register (Rc<RefCell<RegisterInner>>);
 
 impl Register {
     #[inline]
-    pub fn get(&self, msg: &HttpRequest, mut path: Vec<String>, session: &Session) -> Result<Client, GatewayError> {
+    pub fn get(&self, msg: &HttpRequest, mut path: Vec<String>, session: &Session) -> Result<Client, RegError> {
         path.retain(|x| !x.is_empty());
-        let accept = Accept::parse(msg).unwrap_or(Accept::star());
         if let Some(s) = path.get(0) {
             if let Some(r) = self.0.borrow_mut().get_mut(s) {
                 let slash = String::from("/");
                 let path = path.get(1).unwrap_or(&slash);
-                return r.get_resource(path, msg.method(), session.get_resource())
-                    .err_to_gerr(&accept);
+                return r.get_resource(path, msg.method(), session.get_resource());
             }
-            return  Err(ResError::NotFound).err_to_gerr(&accept);
+            return  Err(RegError::NotFound);
 
         }
-        return  Err(ResError::BadRequest).err_to_gerr(&accept);
+        Err(RegError::BadRequest)
     }
 
     fn set_session(extensions: &mut Extensions, register:   Register) {
-        if let None = extensions.get::<Rc<RefCell<RegisterInner>>>() {
+        if extensions.get::<Rc<RefCell<RegisterInner>>>().is_none() {
             extensions.insert(Rc::clone(&register.0));
         }
     }
 
     fn get_session(extensions: &mut Extensions) -> Register {
         if let Some(s_impl) = extensions.get::<Rc<RefCell<RegisterInner>>>() {
-            return Register(Rc::clone(&s_impl));
+            return Register(Rc::clone(s_impl));
         }
         let inner = Rc::new(RefCell::new(RegisterInner::default()));
         extensions.insert(inner.clone());
@@ -94,9 +87,9 @@ impl<'de> serde::Deserialize<'de> for Dir {
             Ok(Dir {
                 resource:  ResourceDef::new(&dir.resources),
                 method:     dir.methods.iter()
-                    .filter_map(|x| Method::from_str(&x).ok())
+                    .filter_map(|x| Method::from_str(x).ok())
                     .collect::<HashSet<Method>>(),
-                scopes:     Resource::from_str(&dir.scopes).map_err(serde::de::Error::custom)?
+                scopes:     Resource::from(&dir.scopes),
             })
     }
 }
@@ -127,77 +120,79 @@ impl Client {
     }
 }
 
-#[derive(Deserialize,Debug)]
+#[derive(Deserialize)]
 struct Res {
     routers:    Vec<Dir>,
     clients:    cll::CLList<Client>
 }
 
-#[derive(Debug)]
-enum ResError {
-    Forbidden,
+#[derive(Clone)]
+pub enum RegError {
     ServiceUnavailable,
+    Forbidden,
+    MethodNotAllowed,
     BadRequest,
     NotFound,
-    MethodNotAllowed,
-    InternalServe
+    InternalServe,
 }
 
-impl std::error::Error for ResError {}
-
-impl ResponseError for ResError {
+impl LGEInfo for RegError {
     fn status_code(&self) -> StatusCode {
+        use RegError::*;
         match self {
-            ResError::Forbidden =>          StatusCode::FORBIDDEN,
-            ResError::ServiceUnavailable => StatusCode::SERVICE_UNAVAILABLE,
-            ResError::BadRequest =>         StatusCode::BAD_REQUEST,
-            ResError::NotFound =>           StatusCode::NOT_FOUND,
-            ResError::MethodNotAllowed =>   StatusCode::METHOD_NOT_ALLOWED,
-            ResError::InternalServe     =>  StatusCode::INTERNAL_SERVER_ERROR,
+            ServiceUnavailable  => StatusCode::SERVICE_UNAVAILABLE,
+            Forbidden           => StatusCode::FORBIDDEN,
+            MethodNotAllowed    => StatusCode::METHOD_NOT_ALLOWED,
+            BadRequest          => StatusCode::BAD_REQUEST,
+            NotFound            => StatusCode::NOT_FOUND,
+            InternalServe       => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
-}
-
-impl fmt::Display for ResError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn message_text(&self) -> &str {
+        use RegError::*;
         match self {
-            ResError::Forbidden =>
-                f.write_str("client authenticated but does not have permission to access the requested resource"),
-            ResError::ServiceUnavailable => 
-                f.write_str("the requested service is not available"),
-            ResError::BadRequest =>
-                f.write_str("client sent an invalid request, such as lacking required request body or parameter"),
-            ResError::NotFound => 
-                f.write_str("the requested resource does not exist"),
-            ResError::MethodNotAllowed => 
-                f.write_str("the method received in the request-line is known by the origin server but not supported by the target resource."),
-            ResError::InternalServe     => 
-                f.write_str("Internal Server Error"),
+            ServiceUnavailable  => "//TODO",
+            Forbidden           => "//TODO",
+            MethodNotAllowed    => "//TODO",
+            BadRequest          => "//TODO",
+            NotFound            => "//TODO",
+            InternalServe       => "//TODO",
+        }
+    }
+    fn description_text(&self) -> &str {
+        use RegError::*;
+        match self {
+            ServiceUnavailable  => "//TODO",
+            Forbidden           => "//TODO",
+            MethodNotAllowed    => "//TODO",
+            BadRequest          => "//TODO",
+            NotFound            => "//TODO",
+            InternalServe       => "//TODO",
         }
     }
 }
 
 impl Res {
     #[inline]
-    fn get_resource(&mut self, path: &str, method: &Method, res: Resource) -> Result<Client, ResError> {
+    fn get_resource(&mut self, path: &str, method: &Method, res: Resource) -> Result<Client, RegError> {
         for item in self.routers.iter() {
             if item.resource.is_match(path) {
                 if item.method.contains(method) {
                     if item.scopes.comfortable_with(&res) {
-                        return Ok(self.clients.next()
-                            .map(|x| x.clone())
-                            .ok_or(ResError::ServiceUnavailable)?);
+                        return self.clients.next()
+                            .cloned()
+                            .ok_or(RegError::ServiceUnavailable);
                     }
-                    return  Err(ResError::Forbidden);
+                    return  Err(RegError::Forbidden);
                 }
-                return  Err(ResError::MethodNotAllowed);
+                return  Err(RegError::MethodNotAllowed);
             }
         }
-        Err(ResError::BadRequest)
+        Err(RegError::BadRequest)
     }
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Default)]
 struct Serveses {
       serveses:   BTreeMap<String, Res>
 }
@@ -253,7 +248,7 @@ where
                     },
                 };
                 return ok(RegisterMiddleware {
-                    service:    service,
+                    service,
                     inner:      InnerData {
                         mtime:      Cell::new(m.st_mtime()),
                         register:   Rc::new(RefCell::new(register.serveses))
@@ -285,13 +280,12 @@ where
     type Request = ServiceRequest;
     type Response = ServiceResponse<B>;
     type Error = Error;
-    type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
+    type Future = futures::future::LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(cx)
     }
 
     fn call(&mut self, req: ServiceRequest) -> Self::Future {
-        let accept = Accept::parse(&req).unwrap_or(Accept::star());
         if let Ok(md) = std::fs::metadata("api.toml") {
             if self.inner.mtime.get() != md.st_mtime() {
                 let serveses = OpenOptions::new()
@@ -312,11 +306,8 @@ where
                 } else if let Ok(Err(e)) = serveses {
                     log::error!("{}",e);
                 } else {
-                    return async move {
-                        Err(ResError::InternalServe)
-                            .err_to_gerr(&accept)
-                            .map_err(|x| x.into())
-                    }.boxed_local();
+                    return err(Error::from(LGError::from(RegError::InternalServe)))
+                        .boxed_local();
                 }
             }
             Register::set_session(&mut *req.extensions_mut()
@@ -327,10 +318,7 @@ where
                 res
             }.boxed_local();
         }
-        return async move {
-            Err(ResError::InternalServe)
-                .err_to_gerr(&accept)
-                .map_err(|x| x.into())
-        }.boxed_local();
+        err(Error::from(LGError::from(RegError::InternalServe)))
+            .boxed_local()
     }
 }
